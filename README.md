@@ -1,2 +1,2 @@
-# Proyecto Calico 2050
-500 Años de Humanidad
+# Proyecto-2050-Calico
+500 años de Humanidad
