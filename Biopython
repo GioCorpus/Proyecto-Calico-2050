@@ -1,0 +1,79 @@
+# Proyecto-2050-Calico: Simulación inicial de longevidad humana
+# Autor: Estructura base conceptual - Adaptable para modelado avanzado
+# Fecha: Marzo 2026
+# Objetivo: Proyectar esperanza de vida bajo escenarios de intervención biotecnológica
+
+import numpy as np
+import matplotlib.pyplot as plt
+from dataclasses import dataclass
+from typing import List, Optional
+
+@dataclass
+class ParametrosLongevidad:
+    """Parámetros biológicos y demográficos iniciales"""
+    esperanza_vida_actual: float = 78.5          # años (promedio global aproximado 2025-2026)
+    tasa_envejecimiento_base: float = 0.012      # incremento anual aproximado sin intervención
+    reduccion_tasa_por_avance: float = 0.40      # reducción hipotética por intervenciones (ej. Calico-style: 40%)
+    anio_inicio: int = 2026
+    anio_horizonte: int = 2100                   # proyección larga (extensible a 2500+ para "500 años")
+    poblacion_inicial: int = 8000000000          # ~8 mil millones
+
+class SimuladorLongevidad:
+    """Motor de simulación de escenarios de longevidad"""
+    def __init__(self, params: ParametrosLongevidad):
+        self.params = params
+        self.anios: List[int] = []
+        self.esperanza_vida: List[float] = []
+        self.poblacion: List[float] = []
+
+    def simular(self, escenario: str = "intervencion_calico") -> None:
+        """Ejecuta la simulación para un escenario dado"""
+        self.anios = [self.params.anio_inicio]
+        self.esperanza_vida = [self.params.esperanza_vida_actual]
+        self.poblacion = [self.params.poblacion_inicial]
+
+        tasa_actual = self.params.tasa_envejecimiento_base
+
+        if escenario == "intervencion_calico":
+            tasa_actual *= (1 - self.params.reduccion_tasa_por_avance)
+
+        for anio in range(self.params.anio_inicio + 1, self.params.anio_horizonte + 1):
+            self.anios.append(anio)
+
+            # Modelo simple: esperanza de vida crece linealmente con reducción de tasa
+            incremento = tasa_actual * (1 + 0.005 * (anio - self.params.anio_inicio))  # aceleración leve
+            nueva_esperanza = self.esperanza_vida[-1] + incremento * 10  # factor de escala aproximado
+            self.esperanza_vida.append(min(nueva_esperanza, 150))  # límite realista inicial
+
+            # Crecimiento poblacional simplificado (ajustable)
+            crecimiento_pob = 0.008 - 0.0001 * (anio - 2020)  # desaceleración demográfica
+            nueva_pob = self.poblacion[-1] * (1 + crecimiento_pob)
+            self.poblacion.append(nueva_pob)
+
+    def visualizar(self) -> None:
+        """Genera gráfica de proyecciones"""
+        plt.figure(figsize=(10, 6))
+        plt.plot(self.anios, self.esperanza_vida, label="Esperanza de vida (años)", color="#1f77b4", linewidth=2.5)
+        plt.title("Proyección de Longevidad: Escenario Intervención Biotecnológica (inspirado en Calico)")
+        plt.xlabel("Año")
+        plt.ylabel("Esperanza de vida al nacer (años)")
+        plt.axvline(x=2050, color='gray', linestyle='--', label="Horizonte 2050")
+        plt.grid(True, alpha=0.3)
+        plt.legend()
+        plt.tight_layout()
+        plt.show()
+
+        # Impresión de hitos clave
+        idx_2050 = self.anios.index(2050) if 2050 in self.anios else -1
+        if idx_2050 != -1:
+            print(f"En 2050 → Esperanza de vida proyectada: {self.esperanza_vida[idx_2050]:.1f} años")
+
+# Ejecución inicial
+if __name__ == "__main__":
+    params = ParametrosLongevidad()
+    simulador = SimuladorLongevidad(params)
+    simulador.simular(escenario="intervencion_calico")
+    simulador.visualizar()
+
+    print("Proyecto-2050-Calico: Simulación inicial completada.")
+    print("Visión: '500 años de Humanidad' como horizonte especulativo de longevidad extrema.")

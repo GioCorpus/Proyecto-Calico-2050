@@ -1,0 +1,10 @@
+[package]
+name = "proyecto-2050-calico"
+version = "0.1.0"
+edition = "2021"
+description = "Proyecto-2050-Calico: Simulación de longevidad humana"
+authors = ["Proyecto-2050-Calico"]
+license = "MIT"
+
+[dependencies]
+rand = "0.8"

@@ -1,0 +1,17 @@
+# Build artifacts
+target/
+*.exe
+*.pdb
+
+# Cargo lock (optional - can be committed for reproducible builds)
+# Cargo.lock
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
