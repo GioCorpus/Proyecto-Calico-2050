@@ -1,0 +1,173 @@
+# Fastfile – Fastlane automation for QuantumEnergyOS mobile distribution
+# Usage:
+#   bundle exec fastlane ios beta        # Deploy iOS TestFlight build
+#   bundle exec fastlane android beta    # Deploy Android Firebase build
+#   bundle exec fastlane screenshots     # Capture localized screenshots
+#   bundle exec fastlane certify         # Manage code signing certificates
+
+default_platform(:ios)
+
+platform :ios do
+  desc 'Deploy a new beta build to TestFlight'
+  lane :beta do
+    # Ensure we have a valid signing certificate
+    match(
+      type: 'appstore',
+      readonly: is_ci,
+      git_url: 'https://github.com/Calico-2050/certificates.git'
+    )
+
+    # Increment build number
+    increment_build_number(
+      xcodeproj: 'QuantumEnergyOS.xcodeproj',
+      scheme: 'QuantumEnergyOS'
+    )
+
+    # Build and upload
+    build_app(
+      workspace: 'QuantumEnergyOS.xcworkspace',
+      scheme: 'QuantumEnergyOS',
+      export_method: 'app-store',
+      export_options: {
+        method: 'app-store',
+        compileBitcode: false,
+        signingStyle: 'manual',
+        provisioningProfiles: {
+          'com.calico2050.quantum' => 'match AppStore com.calico2050.quantum'
+        }
+      },
+      output_directory: './build',
+      output_name: 'QuantumEnergyOS.ipa'
+    )
+
+    # Upload to TestFlight
+    pilot(
+      ipa: './build/QuantumEnergyOS.ipa',
+      skip_waiting_for_build_processing: true,
+      groups: ['QuantumEnergyOS Testers'],
+      changelog: git_changelog(
+        from: last_git_commit,
+        to: 'HEAD',
+        commit_format: '%s'
+      )
+    )
+  end
+
+  desc 'Deploy to App Store (production)'
+  lane :release do
+    match(type: 'appstore')
+    increment_build_number(xcodeproj: 'QuantumEnergyOS.xcodeproj')
+    build_app(
+      workspace: 'QuantumEnergyOS.xcworkspace',
+      scheme: 'QuantumEnergyOS',
+      export_method: 'app-store'
+    )
+    deliver(
+      skip_metadata: false,
+      skip_screenshots: false,
+      force: true,
+      submit_for_review: true
+    )
+  end
+
+  desc 'Update push notification certificates'
+  lane :push_certificates do
+    produce(
+      app_identifier: 'com.calico2050.quantum',
+      app_name: 'QuantumEnergyOS',
+      language: 'en-US',
+      team_name: 'Calico 2050'
+    )
+    # APNs certificates generation would go here
+  end
+
+  desc 'Capture localized screenshots for App Store'
+  lane :screenshots do
+    capture_screenshots(
+      scheme: 'QuantumEnergyOS',
+      devices: ['iphone 14', 'iphone 14 Pro Max'],
+      languages: ['en-US', 'es-ES', 'ja-JP']
+    )
+  end
+end
+
+platform :android do
+  desc 'Deploy a new beta build to Firebase App Distribution'
+  lane :beta do
+    # Ensure we have a valid keystore (from CI secrets)
+    keystore_path = './android/app/release.keystore'
+
+    # Build release APK/AAB
+    gradle(
+      task: 'bundle',
+      project_dir: 'android',
+      build_type: 'Release',
+      properties: {
+        'android.injected.signing.store.file' => keystore_path,
+        'android.injected.signing.store.password' => ENV['ANDROID_KEYSTORE_PASSWORD'],
+        'android.injected.signing.key.alias' => ENV['ANDROID_KEY_ALIAS'],
+        'android.injected.signing.key.password' => ENV['ANDROID_KEY_PASSWORD']
+      }
+    )
+
+    # Upload to Firebase
+    firebase_app_distribution(
+      app: ENV['FIREBASE_ANDROID_APP_ID'],
+      testers: 'quantum-energy-testers@calico2050.com',
+      release_notes: "Automated build #{Time.now.utc} – Quantum kernel v#{project_version}",
+      firebase_cli_token: ENV['FIREBASE_TOKEN']
+    )
+  end
+
+  desc 'Deploy to Google Play Store (production)'
+  lane :release do
+    gradle(
+      task: 'bundle',
+      project_dir: 'android',
+      build_type: 'Release',
+      properties: {
+        'android.injected.signing.store.file' => './android/app/release.keystore',
+        'android.injected.signing.store.password' => ENV['ANDROID_KEYSTORE_PASSWORD'],
+        'android.injected.signing.key.alias' => ENV['ANDROID_KEY_ALIAS'],
+        'android.injected.signing.key.password' => ENV['ANDROID_KEY_PASSWORD']
+      }
+    )
+    upload_to_play_store(
+      track: 'production',
+      release_status: 'draft',
+      aab: 'android/app/build/outputs/bundle/release/app-release.aab'
+    )
+  end
+
+  desc 'Run Android tests on Firebase Test Lab'
+  lane :test do
+    gradle(task: 'connectedDebugAndroidTest')
+    firebase_test_lab_android(
+      project_id: 'calico2050',
+      device_ids: ['Pixel2a-30-pt'],  # List of devices to test on
+      results_bucket: 'gs://calico2050-test-results'
+    )
+  end
+end
+
+# ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
+
+# Get current project version from Cargo.toml
+def project_version
+  toml = File.read('rust/Cargo.toml')
+  version = toml.match(/version\s*=\s*"([^"]+)"/)[1]
+  version
+end
+
+# Get last git commit SHA
+def last_git_commit
+  `git rev-parse HEAD`.strip
+end
+
+# Generate changelog from git log
+def git_changelog(from:, to:, commit_format:)
+  commits = `git log --pretty=format:"#{commit_format}" #{from}..#{to}`.split("\n")
+  commits.reject(&:empty?).join("\n")
+end

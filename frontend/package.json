@@ -1,0 +1,195 @@
+{
+  "name": "quantum-energy-os-mobile",
+  "version": "0.1.0",
+  "description": "Proyecto Calico 2050 - QuantumEnergyOS Mobile Application using React Native with Rust UniFFI bridge",
+  "main": "index.js",
+  "scripts": {
+    "android": "react-native run-android",
+    "ios": "react-native run-ios",
+    "start": "react-native start",
+    "test": "jest",
+    "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
+    "typecheck": "tsc --noEmit",
+    "build:ios": "cd ios && pod install && xcodebuild -workspace QuantumEnergyOS.xcworkspace -scheme QuantumEnergyOS -configuration Release -destination 'generic/platform=iOS'",
+    "build:android": "cd android && ./gradlew assembleRelease",
+    "bundle:ios": "react-native bundle --platform ios --dev false --entry-file index.js --bundle-output ios/main.jsbundle",
+    "bundle:android": "react-native bundle --platform android --dev false --entry-file index.js --bundle-output android/app/src/main/assets/index.android.bundle",
+    "clean": "cd android && ./gradlew clean && cd .. && cd ios && pod deintegrate && pod clean && cd ..",
+    "prepublish": "npm run typecheck && npm run lint"
+  },
+  "keywords": [
+    "react-native",
+    "quantum-computing",
+    "qaoa",
+    "vqe",
+    "photonic-bridge",
+    "energy-optimization",
+    "quantum",
+    "holographic-visualization",
+    "cuarzo-4d",
+    "calico-2050"
+  ],
+  "author": "Proyecto Calico 2050 Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Calico-2050/Proyecto-Calico-2050.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Calico-2050/Proyecto-Calico-2050/issues"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0",
+    "watchman": ">=2023.09.04.00"
+  },
+  "dependencies": {
+    // React Native Core
+    "react": "18.2.0",
+    "react-native": "0.73.2",
+    
+    // Quantum Energy OS Bridge (UniFFI-generated)
+    "quantum-energy-os-bridge": "file:./native",
+    
+    // Performance & Real-time Visualization
+    "react-native-skia": "^0.1.196",           // High-performance 2D/3D graphics
+    "react-native-reanimated": "^3.5.4",       // Smooth 60fps animations
+    "react-native-gesture-handler": "^2.14.0", // Touch interactions
+    "react-native-svg": "^14.0.0",             // Vector graphics
+    
+    // 4D Holographic Visualization
+    "react-native-gl-model-view": "^0.1.5",    // 3D model rendering
+    "@react-three/fiber": "^8.15.0",           // React Three Fiber for 3D
+    "@react-three/drei": "^9.96.0",           // Three.js helpers
+    "three": "^0.160.0",                       // Three.js core
+    
+    // State Management
+    "redux": "^5.0.0",
+    "@reduxjs/toolkit": "^2.0.0",
+    "react-redux": "^9.0.0",
+    "zustand": "^4.4.0",
+    
+    // Navigation
+    "@react-navigation/native": "^6.1.9",
+    "@react-navigation/native-stack": "^6.9.17",
+    "@react-navigation/bottom-tabs": "^6.5.11",
+    
+    // Real-time Data
+    "socket.io-client": "^4.7.2",
+    "react-native-webrtc": "^1.119.0",         // For low-latency streaming
+    
+    // Secure Storage
+    "react-native-keychain": "^8.1.2",         // iOS Keychain & Android Keystore
+    "react-native-sensitive-info": "^6.0.0",   // Alternative secure storage
+    "expo-secure-store": "^13.0.0",           // Expo secure storage
+    
+    // Cryptography
+    "tweetnacl": "^1.0.3",                     // NaCl crypto library
+    "react-native-quick-crypto": "^0.2.1",    // Fast crypto bindings
+    
+    // Date/Time
+    "date-fns": "^3.0.0",
+    
+    // UI Components
+    "react-native-paper": "^5.11.0",
+    "@rneui/themed": "^4.0.0-rc.5",
+    "react-native-magnus": "^1.2.2",
+    
+    // Animations
+    "lottie-react-native": "^6.3.1",          // JSON animations
+    
+    // Utilities
+    "lodash": "^4.17.21",
+    "ramda": "^0.29.0",
+    "axios": "^1.6.0",
+    "eventemitter3": "^5.0.1",
+    
+    // Logging/Monitoring
+    "react-native-logs": "^5.0.1",
+    "@sentry/react-native": "^4.6.0",
+    
+    // Background processing
+    "react-native-background-actions": "^3.0.0",
+    "react-native-background-fetch": "^4.1.12"
+  },
+  
+  "devDependencies": {
+    // Type checking
+    "@types/react": "^18.2.0",
+    "@types/react-native": "^0.73.0",
+    "typescript": "^5.3.0",
+    
+    // Testing
+    "jest": "^29.7.0",
+    "@testing-library/react-native": "^12.3.0",
+    "react-test-renderer": "18.2.0",
+    "detox": "^20.0.0",
+    
+    // Linting & Formatting
+    "eslint": "^8.56.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "prettier": "^3.1.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-react": "^7.33.0",
+    "eslint-plugin-react-native": "^4.1.0",
+    
+    // Build tools
+    "metro-react-native-babel-preset": "0.77.0",
+    "@babel/core": "^7.23.0",
+    "@babel/runtime": "^7.23.0",
+    "babel-jest": "^29.7.0",
+    
+    // Debugging
+    "react-devtools": "^4.28.0",
+    "flipper": "^0.225.0",
+    "react-native-flipper": "^0.225.0"
+  },
+  
+  "peerDependencies": {
+    "react": "*",
+    "react-native": "*"
+  },
+  
+  "resolutions": {
+    "react-native-reanimated": "^3.5.4",
+    "react-native-gesture-handler": "^2.14.0"
+  },
+  
+  "jest": {
+    "preset": "react-native",
+    "moduleFileExtensions": [
+      "ts",
+      "tsx",
+      "js",
+      "jsx",
+      "json",
+      "node"
+    ],
+    "transformIgnorePatterns": [
+      "node_modules/(?!(react-native|@react-native|react-native-.*)/)"
+    ],
+    "setupFilesAfterEnv": [
+      "@testing-library/react-native/extend-expect"
+    ],
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "/android/",
+      "/ios/"
+    ]
+  },
+  
+  "eslintIgnore": [
+    "node_modules/",
+    "ios/",
+    "android/",
+    "dist/",
+    "build/"
+  ],
+  
+  "browserslist": [
+    "last 2 Chrome versions",
+    "last 2 Firefox versions",
+    "last 2 Safari versions"
+  ]
+}

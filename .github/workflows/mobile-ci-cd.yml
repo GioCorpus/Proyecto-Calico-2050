@@ -1,0 +1,480 @@
+name: QuantumEnergyOS Mobile CI/CD
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - 'release/**'
+  pull_request:
+    branches:
+      - main
+      - develop
+  schedule:
+    # Nightly builds for performance regression testing
+    - cron: '0 2 * * *'
+
+env:
+  # Cache optimization
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # =========================================================================
+  # JOB 1: Rust Core Tests (all platforms)
+  # =========================================================================
+  rust-tests:
+    name: Rust Core Tests (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        target: [
+          x86_64-unknown-linux-gnu,
+          aarch64-apple-darwin,
+          x86_64-apple-darwin,
+          aarch64-linux-android,
+          armv7-linux-androideabi
+        ]
+      exclude:
+        - os: ubuntu-latest
+          target: aarch64-apple-darwin
+        - os: ubuntu-latest
+          target: x86_64-apple-darwin
+        - os: macos-latest
+          target: x86_64-unknown-linux-gnu
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+          components: rustfmt, clippy
+
+      - name: Install Android NDK (Linux only)
+        if: runner.os == 'Linux' && contains(matrix.target, 'android')
+        run: |
+          echo "Installing Android NDK..."
+          yes | sdkmanager --sdk_root=$ANDROID_SDK_ROOT "ndk;25.2.9519653" > /dev/null
+
+      - name: Cache Cargo registry & build artifacts
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Run Rust unit tests
+        run: cargo test --target ${{ matrix.target }} --release -- --nocapture
+
+      - name: Run Rust benchmarks
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        run: cargo bench --target ${{ matrix.target }}
+
+      - name: Check code style (rustfmt)
+        run: cargo fmt --all -- --check
+
+      - name: Lint (clippy)
+        run: cargo clippy --target ${{ matrix.target }} -- -D warnings
+
+  # =========================================================================
+  # JOB 2: Build Android APK
+  # =========================================================================
+  android-build:
+    name: Build Android APK (${{ matrix.architecture }})
+    runs-on: ubuntu-latest
+    needs: rust-tests
+    strategy:
+      fail-fast: false
+      matrix:
+        architecture: [arm64-v8a, armeabi-v7a]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+          cache: gradle
+
+      - name: Install Rust toolchain (Android targets)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: |
+            aarch64-linux-android
+            armv7-linux-androideabi
+
+      - name: Install Android NDK
+        uses: nttld/setup-android-ndk@v1
+        with:
+          ndk-version: '25.2.9519653'
+          local-version: 'r25b'
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Cache Cargo artifacts
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            target/
+          key: ${{ runner.os }}-cargo-android-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build Rust native library for Android (${{ matrix.architecture }})
+        run: |
+          rustup target add aarch64-linux-android armv7-linux-androideabi
+          cargo build --release --target ${{ matrix.architecture == 'arm64-v8a' && 'aarch64-linux-android' || 'armv7-linux-androideabi' }}
+
+      - name: Build React Native bundle
+        working-directory: ./frontend
+        run: |
+          npm ci
+          npm run bundle:android
+
+      - name: Build Debug APK
+        working-directory: ./android
+        run: ./gradlew assembleDebug
+
+      - name: Build Release APK (unsigned)
+        working-directory: ./android
+        run: ./gradlew assembleRelease
+
+      - name: Sign Release APK
+        if: github.event_name != 'pull_request' && secrets.ANDROID_KEYSTORE_BASE64 != ''
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          echo $ANDROID_KEYSTORE_BASE64 | base64 -d > release.keystore
+          cp release.keystore android/app/
+          # Sign the APK using apksigner
+          $ANDROID_HOME/build-tools/34.0.0/apksigner sign \
+            --ks release.keystore \
+            --ks-key-alias $ANDROID_KEY_ALIAS \
+            --ks-pass pass:$ANDROID_KEYSTORE_PASSWORD \
+            --key-pass pass:$ANDROID_KEY_PASSWORD \
+            --out app-release-signed.apk \
+            android/app/build/outputs/apk/release/app-release-unsigned.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: quantum-energy-os-android-${{ matrix.architecture }}
+          path: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+            android/app/build/outputs/apk/release/app-release*.apk
+          retention-days: 30
+
+  # =========================================================================
+  # JOB 3: Build iOS IPA
+  # =========================================================================
+  ios-build:
+    name: Build iOS IPA
+    runs-on: macos-latest
+    needs: rust-tests
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - scheme: QuantumEnergyOS
+            configuration: Release
+            destination: 'generic/platform=iOS'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust (iOS targets)
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          target: aarch64-apple-ios
+          override: true
+
+      - name: Install Rust iOS targets
+        run: |
+          rustup target add aarch64-apple-ios x86_64-apple-ios
+
+      - name: Build Rust static library for iOS
+        run: |
+          cargo build --release --target aarch64-apple-ios --lib
+          # Copy built library to iOS project
+          mkdir -p ios/RustLib
+          cp target/aarch64-apple-ios/release/libquantum_energy_os.a ios/RustLib/
+          cp target/aarch64-apple-ios/release/libuniffi_quantum_energy_os.a ios/RustLib/ 2>/dev/null || true
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+
+      - name: Install CocoaPods dependencies
+        working-directory: ./ios
+        run: |
+          bundle install
+          bundle exec pod install --repo-update
+
+      - name: Build React Native bundle
+        working-directory: ./frontend
+        run: |
+          npm ci
+          npm run bundle:ios
+
+      - name: Build IPA (Debug)
+        working-directory: ./ios
+        run: |
+          xcodebuild \
+            -workspace QuantumEnergyOS.xcworkspace \
+            -scheme QuantumEnergyOS \
+            -configuration Debug \
+            -destination 'generic/platform=iOS' \
+            -archivePath ./build/QuantumEnergyOS-Debug.xcarchive \
+            archive
+
+      - name: Build IPA (Release)
+        if: github.event_name != 'pull_request' && secrets.IOS_SIGNING_IDENTITY != ''
+        working-directory: ./ios
+        env:
+          IOS_SIGNING_IDENTITY: ${{ secrets.IOS_SIGNING_IDENTITY }}
+          IOS_PROVISIONING_PROFILE: ${{ secrets.IOS_PROVISIONING_PROFILE }}
+        run: |
+          # Create Xcode build settings file
+          cat > ExportOptions.plist << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>ad-hoc</string>
+            <key>compileBitcode</key>
+            <false/>
+            <key>stripSwiftSymbols</key>
+            <true/>
+            <key>thinning</key>
+            <string>&lt;none&gt;</string>
+          </dict>
+          </plist>
+          EOF
+
+          xcodebuild \
+            -workspace QuantumEnergyOS.xcworkspace \
+            -scheme QuantumEnergyOS \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath ./build/QuantumEnergyOS-Release.xcarchive \
+            archive \
+            CODE_SIGN_IDENTITY="$IOS_SIGNING_IDENTITY" \
+            PROVISIONING_PROFILE_SPECIFIER="$IOS_PROVISIONING_PROFILE"
+
+          xcodebuild -exportArchive \
+            -archivePath ./build/QuantumEnergyOS-Release.xcarchive \
+            -exportPath ./build \
+            -exportOptionsPlist ExportOptions.plist
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: quantum-energy-os-ios
+          path: |
+            ios/build/*.ipa
+            ios/build/QuantumEnergyOS-*.xcarchive
+          retention-days: 30
+
+      - name: Upload dSYM for crash reporting
+        uses: actions/upload-artifact@v3
+        with:
+          name: quantum-energy-os-dsym
+          path: ios/build/QuantumEnergyOS-*.xcarchive/dSYMs/
+          retention-days: 30
+
+  # =========================================================================
+  # JOB 4: Fastlane Distribution (Optional)
+  # =========================================================================
+  distribute:
+    name: Distribute to TestFlight / Firebase
+    runs-on: macos-latest
+    needs: [ios-build, android-build]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download iOS artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: quantum-energy-os-ios
+          path: ./artifacts/ios
+
+      - name: Download Android artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: quantum-energy-os-android-arm64-v8a
+          path: ./artifacts/android
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+
+      - name: Install Fastlane
+        run: |
+          gem install fastlane
+
+      - name: Deploy iOS to TestFlight
+        if: secrets.APP_STORE_CONNECT_API_KEY_ID != ''
+        env:
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
+        run: |
+          # Setup App Store Connect API key
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          echo $APP_STORE_CONNECT_API_KEY_CONTENT | base64 -d > AuthKey.p8
+          
+          # Run Fastlane pilot to upload to TestFlight
+          fastlane pilot upload \
+            --ipa ./artifacts/ios/QuantumEnergyOS.ipa \
+            --api_key_path AuthKey.p8 \
+            --api_key_id $APP_STORE_CONNECT_API_KEY_ID \
+            --api_key_issuer_id $APP_STORE_CONNECT_API_ISSUER_ID \
+            --skip_waiting_for_build_processing
+
+      - name: Deploy Android to Firebase App Distribution
+        if: secrets.FIREBASE_TOKEN != ''
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: |
+          # Upload APK to Firebase
+          firebase appdistribution:distribute \
+            ./artifacts/android/app-release.apk \
+            --app ${{ secrets.FIREBASE_ANDROID_APP_ID }} \
+            --groups "quantum-energy-testers" \
+            --release-notes "Automated CI/CD build from ${{ github.sha }}"
+
+      - name: Upload GitHub Release (Tagged Releases)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            ./artifacts/ios/*.ipa
+            ./artifacts/android/*.apk
+          body: |
+            Automated CI/CD Build for ${{ github.ref_name }}
+            Commit: ${{ github.sha }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # =========================================================================
+  # JOB 5: Performance Regression Testing
+  # =========================================================================
+  performance-tests:
+    name: Performance Regression Tests
+    runs-on: macos-latest
+    needs: [ios-build, android-build]
+    if: github.event_name == 'schedule' || github.event_name == 'pull_request'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+
+      - name: Cache Rust artifacts
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            target/
+          key: ${{ runner.os }}-cargo-perf-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Run performance benchmarks
+        run: |
+          cargo install cargo-criterion
+          cargo criterion --message-format=json > benchmark-results.json
+
+      - name: Compare with baseline
+        if: github.event_name == 'pull_request'
+        run: |
+          # Compare benchmark results against main branch
+          git fetch origin main
+          BASELINE=$(git show origin/main:benchmark-results.json 2>/dev/null || echo "{}")
+          CURRENT=$(cat benchmark-results.json)
+
+          # Use criterion-ratio to detect regressions > 5%
+          # Would integrate with custom performance monitoring here
+
+      - name: Upload performance metrics
+        uses: actions/upload-artifact@v3
+        with:
+          name: performance-metrics
+          path: |
+            benchmark-results.json
+            target/criterion/reports/
+          retention-days: 7
+
+  # =========================================================================
+  # JOB 6: Docker Image (Optional - for containerized deployment)
+  # =========================================================================
+  docker-build:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    needs: rust-tests
+    if: github.event_name == 'push' && (startsWith(github.ref, 'refs/heads/main') || startsWith(github.ref, 'refs/tags/'))
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU (multi-arch)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/calico-2050/quantum-energy-os:latest
+            ghcr.io/calico-2050/quantum-energy-os:${{ github.sha }}
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -1,0 +1,178 @@
+# QuantumEnergyOS Development Container
+# Provides a consistent development environment with Rust, Node.js, Android SDK, and build tools
+
+FROM ubuntu:22.04
+
+# Metadata
+LABEL maintainer="Proyecto Calico 2050 <dev@calico2050.quantum>"
+LABEL version="0.1.0"
+LABEL description="Development container for QuantumEnergyOS mobile app"
+
+# Avoid interactive prompts during install
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
+
+# ============================================================================
+# Core System Packages
+# ============================================================================
+RUN apt-get update && apt-get install -y \
+    # Build essentials
+    build-essential \
+    cmake \
+    ninja-build \
+    git \
+    curl \
+    wget \
+    unzip \
+    zip \
+    xz-utils \
+    # Languages & tooling
+    python3 \
+    python3-pip \
+    python3-venv \
+    openjdk-17-jdk \
+    nodejs \
+    npm \
+    # Rust toolchain (install via rustup for latest)
+    pkg-config \
+    libssl-dev \
+    zlib1g-dev \
+    # Android SDK dependencies
+    libncurses5 \
+    libstdc++6 \
+    libtinfo5 \
+    # Utilities
+    jq \
+    vim \
+    nano \
+    fish \
+    # Security & crypto libs
+    libcloog-isl-dev \
+    libgmp-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# ============================================================================
+# Install Rust via rustup (stable + nightly)
+# ============================================================================
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+    sh -s -- -y --default-toolchain stable
+
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Install Rust targets for mobile
+RUN rustup target add \
+    aarch64-linux-android \
+    armv7-linux-androideabi \
+    x86_64-linux-android \
+    aarch64-apple-ios \
+    x86_64-apple-ios
+
+# Install useful Rust tools
+RUN cargo install cargo-audit cargo-deny cargo-edit cargo-watch cargo-about
+
+# ============================================================================
+# Android SDK + NDK + Platform Tools
+# ============================================================================
+ENV ANDROID_HOME=/opt/android-sdk
+ENV ANDROID_SDK_ROOT=/opt/android-sdk
+ENV ANDROID_NDK_HOME=/opt/android-ndk
+ENV PATH="${PATH}:${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools"
+
+# Download and install Android Command Line Tools
+RUN mkdir -p ${ANDROID_HOME}/cmdline-tools && \
+    wget -q https://dl.google.com/android/repository/commandlinetools-linux-11096708_latest.zip -O /tmp/cmdline-tools.zip && \
+    unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline-tools && \
+    mv /tmp/cmdline-tools/cmdline-tools ${ANDROID_HOME}/cmdline-tools/latest && \
+    rm -rf /tmp/*
+
+# Accept Android SDK licenses
+RUN yes | sdkmanager --sdk_root=${ANDROID_HOME} "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+
+# Install NDK r25b
+RUN yes | sdkmanager --sdk_root=${ANDROID_HOME} "ndk;25.2.9519653"
+
+# ============================================================================
+# Node.js (use nvm for version management)
+# ============================================================================
+RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+
+ENV NVM_DIR="/root/.nvm"
+ENV NODE_VERSION="20.11.1"
+
+RUN . "$NVM_DIR/nvm.sh" && \
+    nvm install ${NODE_VERSION} && \
+    nvm alias default ${NODE_VERSION} && \
+    nvm use default
+
+ENV PATH="${NVM_DIR}/versions/node/v${NODE_VERSION}/bin:${PATH}"
+
+# Global npm tools
+RUN npm install -g \
+    @react-native-community/cli \
+    typescript \
+    ts-node \
+    eslint \
+    prettier \
+    fastlane \
+    expo-cli
+
+# ============================================================================
+# Python (for bioinformatics simulation compatibility)
+# ============================================================================
+RUN pip3 install --no-cache-dir \
+    numpy \
+    matplotlib \
+    biopython \
+    jupyter
+
+# ============================================================================
+# Rust UniFFI & crypto dependencies pre-cache
+# ============================================================================
+RUN cargo install uniffi_bindgen
+
+# Pre-fetch dependencies from Cargo.toml to speed up builds
+# (Assuming you copy manifest before full build)
+# COPY rust/Cargo.toml /tmp/rust/Cargo.toml
+# RUN cd /tmp/rust && cargo fetch
+
+# ============================================================================
+# Setup workspace
+# ============================================================================
+WORKDIR /workspace
+
+# Clone repository if GITHUB_TOKEN provided, otherwise copy local
+ARG GITHUB_TOKEN
+RUN if [ -n "$GITHUB_TOKEN" ]; then \
+      git clone https://${GITHUB_TOKEN}@github.com/Calico-2050/Proyecto-Calico-2050.git .; \
+    else \
+      echo "No GITHUB_TOKEN provided, skipping repo clone"; \
+    fi
+
+# ============================================================================
+# Devcontainer metadata (VS Code)
+# ============================================================================
+# VSCode extensions recommended
+# - vscodevim.vim
+# - bungcip.better-toml
+# - serayuzgur.crates
+# - tamasfe.even-better-toml
+# - ms-vscode.cpptools
+# - rust-lang.rust-analyzer
+# - esbenp.prettier-vscode
+
+# ============================================================================
+# Convenience scripts
+# ============================================================================
+RUN echo '#!/bin/bash\n\
+cd /workspace\n\
+echo "QuantumEnergyOS Development Environment"\n\
+echo "Rust: $(rustc --version)"\n\
+echo "Node: $(node --version)"\n\
+echo "Android NDK: ${ANDROID_NDK_HOME}"\n\
+echo "iOS targets: $(rustup target list | grep apple)"\n\
+' > /usr/local/bin/docker-info && chmod +x /usr/local/bin/docker-info
+
+# ============================================================================
+# Entrypoint
+# ============================================================================
+CMD ["/bin/bash"]

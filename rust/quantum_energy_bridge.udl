@@ -1,0 +1,131 @@
+// QuantumEnergyOS Mobile Bridge - UniFFI Interface Definition
+// This defines the Rust-to-mobile API boundary
+
+namespace quantum_energy {
+    // Core data structures transferred between Rust and mobile
+
+    enum ScenarioType {
+        Base,
+        IntervencionCalico,
+        Optimista
+    }
+
+    enum QuantumAlgorithm {
+        QAOAV16,     // QAOA with 16 qubits
+        VQE35,       // VQE with 35 parameters
+        HybridQAOA,  // Hybrid classical-quantum approach
+        PhotonicBridge  // Photonic-bridge accelerated simulation
+    }
+
+    struct SimulationParameters {
+        // Biological/demographic parameters
+        expectativa_vida_base: double,
+        tasa_envejecimiento: double,
+        poblacion_inicial: i64,
+        years_to_simulate: i32,
+
+        // Quantum optimization params
+        quantum_algorithm: QuantumAlgorithm,
+        optimization_iterations: i32,
+        convergence_threshold: double,
+
+        // Photonic bridge configuration
+        photonic_bridge_enabled: boolean,
+        bridge_latency_ms: i32,
+        parallelism_factor: i32
+    }
+
+    struct SimulationResult {
+        // Core simulation outputs
+        poblacion_futura: i64,
+        expectativa_vida_optimizada: double,
+        tasa_mortalidad_ajustada: double,
+        years_simulated: i32,
+
+        // Performance metrics
+        optimization_time_ms: i64,
+        classical_compute_ms: i64,
+        quantum_advantage_factor: double,
+
+        // Confidence intervals
+        lower_bound_95: double,
+        upper_bound_95: double,
+
+        // Metadata
+        algorithm_used: QuantumAlgorithm,
+        timestamp_unix: i64,
+        scenario: ScenarioType
+    }
+
+    struct PowerGridMetrics {
+        // Quantum-optimized power distribution metrics
+        total_power_mw: double,
+        renewable_percentage: double,
+        grid_efficiency: double,
+        peak_load_mw: double,
+        storage_capacity_mwh: double,
+        quantum_optimized: boolean
+    }
+
+    struct Cuarzo4DState {
+        // Holographic storage visualization state
+        dimensions: [double; 4],
+        data_points: i32,
+        resolution_scale: double,
+        wave_interference_pattern: boolean,
+        last_update_timestamp: i64
+    }
+
+    // Interface definition
+    interface QuantumEnergyOS {
+        // Initialize the quantum kernel with configuration
+        init(
+            config_path: string,
+            enable_photonic_bridge: boolean
+        ): boolean
+
+        // Core quantum optimization for longevity scenario
+        optimize_scenario(
+            params: SimulationParameters
+        ): SimulationResult
+
+        // Photonic bridge accelerated batch optimization
+        batch_optimize_photonic(
+            scenarios: list<SimulationParameters>
+        ): list<SimulationResult>
+
+        // Real-time power grid optimization (sub-1ms latency target)
+        optimize_power_grid_realtime(
+            grid_metrics: PowerGridMetrics,
+            constraint_weightings: map<string, double>
+        ): PowerGridMetrics
+
+        // Get Cuarzo 4D holographic visualization state
+        get_cuarzo_4d_state(): Cuarzo4DState
+
+        // Update holographic storage parameters
+        update_cuarzo_dimensions(
+            new_dimensions: [double; 4],
+            resolution_multiplier: double
+        ): void
+
+        // Secure quantum key management
+        generate_quantum_keypair(
+            key_type: string,  // "ed25519" or "x25519"
+            secure_enclave: boolean  // iOS Secure Enclave / Android KeyStore
+        ): string  // Returns encrypted key identifier
+
+        // Validate quantum signature
+        verify_quantum_signature(
+            message: string,
+            signature: string,
+            public_key_id: string
+        ): boolean
+
+        // Clean shutdown
+        shutdown(): void
+    }
+
+    // Factory function for creating the OS instance
+    constructor create_quantum_energy_os(): QuantumEnergyOS;
+}

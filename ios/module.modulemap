@@ -1,0 +1,22 @@
+/**
+ * QuantumEnergyOS - Clang Module Map for iOS
+ *
+ * This module map allows the Rust quantum kernel to be imported as a
+ * Clang module in Swift and Objective-C, providing type-safe access
+ * to the UniFFI-generated C bindings.
+ *
+ * Usage in Swift:
+ *   import quantum_energy_os
+ */
+
+module quantum_energy_os {
+    header "QuantumEnergyOS.h"
+    export *
+    module * { export * }
+}
+
+module uniffi_quantum_energy_os {
+    header "uniffi_quantum_energy_os.h"
+    export *
+    module * { export * }
+}
